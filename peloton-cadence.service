@@ -1,0 +1,22 @@
+[Unit]
+Description=Peloton Cadence YouTube Control
+Documentation=https://github.com/avidan/peloton-cadence-control
+After=network.target bluetooth.target
+Wants=network.target bluetooth.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/peloton-cadence-control
+ExecStart=/usr/bin/python3 /home/pi/peloton-cadence-control/cadence_monitor.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

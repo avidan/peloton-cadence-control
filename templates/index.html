@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peloton Cadence Monitor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚴 Peloton Cadence Monitor</h1>
+            <p class="subtitle">Real-time YouTube access control based on pedaling effort</p>
+        </header>
+
+        <div class="status-grid">
+            <div class="card" id="cadence-card">
+                <div class="card-header">
+                    <h2>Current Cadence</h2>
+                </div>
+                <div class="card-body">
+                    <div class="metric">
+                        <span class="value" id="current-cadence">--</span>
+                        <span class="unit">RPM</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="average-card">
+                <div class="card-header">
+                    <h2>Average Cadence</h2>
+                </div>
+                <div class="card-body">
+                    <div class="metric">
+                        <span class="value" id="average-cadence">--</span>
+                        <span class="unit">RPM</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="youtube-card">
+                <div class="card-header">
+                    <h2>YouTube Status</h2>
+                </div>
+                <div class="card-body">
+                    <div class="status-indicator">
+                        <div class="indicator" id="youtube-indicator"></div>
+                        <span class="status-text" id="youtube-status">Unknown</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Configuration</h2>
+            </div>
+            <div class="card-body">
+                <div class="config-grid">
+                    <div class="config-item">
+                        <span class="config-label">Threshold:</span>
+                        <span class="config-value">{{ config.CADENCE_THRESHOLD }} RPM</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Grace Period:</span>
+                        <span class="config-value">{{ config.GRACE_PERIOD_SECONDS }}s</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Rolling Window:</span>
+                        <span class="config-value">{{ config.ROLLING_AVERAGE_WINDOW }}s</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Connection Status</h2>
+            </div>
+            <div class="card-body">
+                <div class="connection-grid">
+                    <div class="connection-item">
+                        <span class="connection-label">Cadence Sensor:</span>
+                        <span class="connection-status" id="sensor-status">
+                            <span class="dot" id="sensor-dot"></span>
+                            <span id="sensor-text">Unknown</span>
+                        </span>
+                    </div>
+                    <div class="connection-item">
+                        <span class="connection-label">UniFi Controller:</span>
+                        <span class="connection-status" id="controller-status">
+                            <span class="dot" id="controller-dot"></span>
+                            <span id="controller-text">Unknown</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Last updated: <span id="last-update">Never</span></p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
