@@ -144,7 +144,7 @@ urllib3>=2.0.0         # SSL handling
 - Configurable RPM threshold
 - Grace period prevents flickering
 - Hysteresis for stable state changes
-- Fail-safe defaults (unblocked if sensor disconnects)
+- Fail-safe defaults (blocked if sensor disconnects for safety)
 
 ### Robust Error Handling
 - Auto-reconnect to Bluetooth sensor

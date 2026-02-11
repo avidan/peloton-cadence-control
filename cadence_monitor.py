@@ -115,10 +115,10 @@ class CadenceMonitor:
         """
         avg_cadence = self.get_average_cadence()
 
-        # Not enough data yet
+        # Not enough data yet - default to BLOCKED for safety
         if len(self.cadence_history) < Config.ROLLING_AVERAGE_WINDOW:
             logger.debug(f"Waiting for more data ({len(self.cadence_history)}/{Config.ROLLING_AVERAGE_WINDOW})")
-            return self.youtube_blocked if self.youtube_blocked is not None else False
+            return True
 
         # Check against threshold
         should_block = avg_cadence < Config.CADENCE_THRESHOLD
@@ -182,11 +182,29 @@ class CadenceMonitor:
             while self.running:
                 # Check if still connected
                 if not self.sensor.is_connected():
-                    logger.warning("Lost connection to cadence sensor, attempting reconnect...")
+                    logger.warning("Lost connection to cadence sensor - BLOCKING YouTube for safety")
+
+                    # Block YouTube immediately when sensor disconnects
+                    if not self.youtube_blocked:
+                        if self.controller.enable_rule():
+                            self.youtube_blocked = True
+                            self.last_state_change = time.time()
+                            logger.warning("⚠ YouTube BLOCKED due to sensor disconnect")
+
+                    # Clear cadence history since we have no data
+                    self.cadence_history.clear()
+                    self.current_cadence = 0
+
+                    # Attempt reconnect
+                    logger.info("Attempting to reconnect to sensor...")
                     if not await self.sensor.connect():
                         logger.error("Reconnection failed, waiting 10s before retry...")
                         await asyncio.sleep(10)
                         continue
+                    else:
+                        logger.info("✓ Reconnected to sensor successfully")
+                        # Restart notifications
+                        await self.sensor.start_notifications(callback=self._cadence_update)
 
                 # Update YouTube block status
                 await self.update_youtube_block()
