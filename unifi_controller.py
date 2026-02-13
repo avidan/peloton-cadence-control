@@ -1,5 +1,5 @@
 """
-UniFi Controller API client for managing firewall rules
+UniFi OS API client for managing traffic rules via API key
 """
 import requests
 import urllib3
@@ -14,102 +14,79 @@ logger = setup_logger('unifi_controller')
 
 class UniFiController:
     """
-    UniFi Controller API Client
-    Manages firewall rules via API
+    UniFi OS API Client
+    Manages traffic rules via API key authentication (v2 API)
     """
 
     def __init__(self):
         self.base_url = f"https://{Config.UNIFI_HOST}:{Config.UNIFI_PORT}"
+        self.api_path = f"/proxy/network/v2/api/site/{Config.UNIFI_SITE}/trafficrules"
         self.session = requests.Session()
         self.session.verify = Config.UNIFI_VERIFY_SSL
-        self.logged_in = False
+        self.session.headers.update({
+            'X-API-Key': Config.UNIFI_API_KEY,
+        })
         self.firewall_rule_id = Config.FIREWALL_RULE_ID
 
-    def login(self):
+    def verify_access(self):
         """
-        Log in to UniFi Controller
+        Verify API key works by fetching traffic rules
 
         Returns:
-            True if login successful
+            True if API key is valid and controller is reachable
         """
         try:
-            url = f"{self.base_url}/api/login"
-            payload = {
-                "username": Config.UNIFI_USERNAME,
-                "password": Config.UNIFI_PASSWORD
-            }
-
-            logger.debug(f"Logging in to UniFi Controller at {self.base_url}")
-            response = self.session.post(url, json=payload, timeout=10)
-
-            if response.status_code == 200:
-                logger.info("Successfully logged in to UniFi Controller")
-                self.logged_in = True
+            logger.debug(f"Verifying API access to UniFi OS at {self.base_url}")
+            rules = self.get_traffic_rules()
+            if rules is not None:
+                logger.info("Successfully connected to UniFi OS")
                 return True
             else:
-                logger.error(f"Login failed: {response.status_code} - {response.text}")
+                logger.error("API key authentication failed")
                 return False
-
         except Exception as e:
-            logger.error(f"Login error: {e}")
+            logger.error(f"Connection error: {e}")
             return False
 
-    def logout(self):
-        """Log out from UniFi Controller"""
-        try:
-            url = f"{self.base_url}/api/logout"
-            self.session.post(url, timeout=5)
-            logger.debug("Logged out from UniFi Controller")
-        except Exception as e:
-            logger.debug(f"Logout error (non-critical): {e}")
-        finally:
-            self.logged_in = False
-
-    def get_firewall_rules(self):
+    def get_traffic_rules(self):
         """
-        Get all firewall rules
+        Get all traffic rules
 
         Returns:
-            List of firewall rules or None if failed
+            List of traffic rules or None if failed
         """
-        if not self.logged_in:
-            logger.warning("Not logged in, attempting login...")
-            if not self.login():
-                return None
-
         try:
-            url = f"{self.base_url}/api/s/{Config.UNIFI_SITE}/rest/firewallrule"
+            url = f"{self.base_url}{self.api_path}"
             response = self.session.get(url, timeout=10)
 
             if response.status_code == 200:
-                data = response.json()
-                rules = data.get('data', [])
-                logger.debug(f"Retrieved {len(rules)} firewall rules")
+                rules = response.json()
+                logger.debug(f"Retrieved {len(rules)} traffic rules")
                 return rules
             else:
-                logger.error(f"Failed to get firewall rules: {response.status_code}")
+                logger.error(f"Failed to get traffic rules: {response.status_code}")
                 return None
 
         except Exception as e:
-            logger.error(f"Error getting firewall rules: {e}")
+            logger.error(f"Error getting traffic rules: {e}")
             return None
 
     def find_rule_by_name(self, rule_name):
         """
-        Find firewall rule by name
+        Find traffic rule by description
 
         Args:
-            rule_name: Name of the rule to find
+            rule_name: Description of the rule to find
 
         Returns:
             Rule dict or None if not found
         """
-        rules = self.get_firewall_rules()
+        rules = self.get_traffic_rules()
         if not rules:
             return None
 
         for rule in rules:
-            if rule.get('name', '').lower() == rule_name.lower():
+            if rule.get('description', '').lower() == rule_name.lower():
                 logger.info(f"Found rule '{rule_name}': {rule.get('_id')}")
                 return rule
 
@@ -118,7 +95,7 @@ class UniFiController:
 
     def enable_rule(self, rule_id=None):
         """
-        Enable (activate) a firewall rule
+        Enable (activate) a traffic rule
 
         Args:
             rule_id: Rule ID to enable (uses configured rule_id if not provided)
@@ -137,7 +114,7 @@ class UniFiController:
 
     def disable_rule(self, rule_id=None):
         """
-        Disable (deactivate) a firewall rule
+        Disable (deactivate) a traffic rule
 
         Args:
             rule_id: Rule ID to disable (uses configured rule_id if not provided)
@@ -165,16 +142,11 @@ class UniFiController:
         Returns:
             True if successful
         """
-        if not self.logged_in:
-            logger.warning("Not logged in, attempting login...")
-            if not self.login():
-                return False
-
         try:
             # First, get the current rule to preserve other settings
-            rules = self.get_firewall_rules()
+            rules = self.get_traffic_rules()
             if not rules:
-                logger.error("Could not retrieve firewall rules")
+                logger.error("Could not retrieve traffic rules")
                 return False
 
             rule = None
@@ -191,12 +163,12 @@ class UniFiController:
             rule['enabled'] = enabled
 
             # Send update request
-            url = f"{self.base_url}/api/s/{Config.UNIFI_SITE}/rest/firewallrule/{rule_id}"
+            url = f"{self.base_url}{self.api_path}/{rule_id}"
             response = self.session.put(url, json=rule, timeout=10)
 
             if response.status_code == 200:
                 action = "enabled" if enabled else "disabled"
-                logger.info(f"Successfully {action} firewall rule {rule.get('name', rule_id)}")
+                logger.info(f"Successfully {action} traffic rule {rule.get('description', rule_id)}")
                 return True
             else:
                 logger.error(f"Failed to update rule: {response.status_code} - {response.text}")
@@ -208,7 +180,7 @@ class UniFiController:
 
     def get_rule_status(self, rule_id=None):
         """
-        Get current status of firewall rule
+        Get current status of traffic rule
 
         Args:
             rule_id: Rule ID to check (uses configured rule_id if not provided)
@@ -223,7 +195,7 @@ class UniFiController:
             logger.error("No rule ID provided or configured")
             return None
 
-        rules = self.get_firewall_rules()
+        rules = self.get_traffic_rules()
         if not rules:
             return None
 
@@ -236,7 +208,7 @@ class UniFiController:
 
     def initialize_rule_id(self):
         """
-        Find and store the firewall rule ID by name
+        Find and store the traffic rule ID by name
         Useful for first-time setup
 
         Returns:
@@ -252,25 +224,25 @@ class UniFiController:
 
 
 def test_unifi():
-    """Test UniFi Controller connection and rule management"""
-    logger.info("Testing UniFi Controller connection...")
+    """Test UniFi OS connection and rule management"""
+    logger.info("Testing UniFi OS connection...")
 
     controller = UniFiController()
 
-    # Login
-    if not controller.login():
-        logger.error("Failed to login")
+    # Verify API access
+    if not controller.verify_access():
+        logger.error("Failed to connect - check your API key in .env")
         return
 
     # Get all rules
-    logger.info("\nFetching firewall rules...")
-    rules = controller.get_firewall_rules()
+    logger.info("\nFetching traffic rules...")
+    rules = controller.get_traffic_rules()
 
     if rules:
-        logger.info(f"Found {len(rules)} firewall rules:")
+        logger.info(f"Found {len(rules)} traffic rules:")
         for rule in rules:
             enabled = "✓" if rule.get('enabled') else "✗"
-            logger.info(f"  [{enabled}] {rule.get('name')} (ID: {rule.get('_id')})")
+            logger.info(f"  [{enabled}] {rule.get('description')} (ID: {rule.get('_id')})")
 
     # Try to find the YouTube blocking rule
     logger.info(f"\nLooking for rule: {Config.FIREWALL_RULE_NAME}")
@@ -306,12 +278,13 @@ def test_unifi():
         else:
             controller.disable_rule(rule_id)
 
+        final_status = controller.get_rule_status(rule_id)
+        logger.info(f"Restored status: {'Enabled' if final_status else 'Disabled'}")
+
     else:
         logger.warning(f"Rule '{Config.FIREWALL_RULE_NAME}' not found")
         logger.info("Please create this rule in UniFi Controller first")
 
-    # Logout
-    controller.logout()
     logger.info("\nTest complete")
 
 

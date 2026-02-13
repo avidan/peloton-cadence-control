@@ -40,11 +40,11 @@ class CadenceMonitor:
             logger.error(f"Configuration error: {e}")
             return False
 
-        # Connect to UniFi Controller
-        logger.info("Connecting to UniFi Controller...")
-        if not self.controller.login():
-            logger.error("Failed to connect to UniFi Controller")
-            logger.error("Please check your UniFi credentials in .env file")
+        # Verify UniFi OS API access
+        logger.info("Connecting to UniFi OS...")
+        if not self.controller.verify_access():
+            logger.error("Failed to connect to UniFi OS")
+            logger.error("Please check your UNIFI_API_KEY in .env file")
             return False
 
         # Initialize rule ID if not set
@@ -234,10 +234,6 @@ class CadenceMonitor:
         # Disconnect from sensor
         if self.sensor.is_connected():
             await self.sensor.disconnect()
-
-        # Logout from controller
-        if self.controller.logged_in:
-            self.controller.logout()
 
         logger.info("Shutdown complete")
 

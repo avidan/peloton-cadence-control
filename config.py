@@ -21,11 +21,10 @@ class Config:
     CADENCE_SENSOR_NAME = os.getenv('CADENCE_SENSOR_NAME', 'Cadence')
     BLE_SCAN_TIMEOUT = int(os.getenv('BLE_SCAN_TIMEOUT', '10'))
 
-    # UniFi Controller Settings
+    # UniFi OS Settings
     UNIFI_HOST = os.getenv('UNIFI_HOST', '192.168.1.1')
-    UNIFI_PORT = int(os.getenv('UNIFI_PORT', '8443'))
-    UNIFI_USERNAME = os.getenv('UNIFI_USERNAME', '')
-    UNIFI_PASSWORD = os.getenv('UNIFI_PASSWORD', '')
+    UNIFI_PORT = int(os.getenv('UNIFI_PORT', '443'))
+    UNIFI_API_KEY = os.getenv('UNIFI_API_KEY', '')
     UNIFI_SITE = os.getenv('UNIFI_SITE', 'default')
     UNIFI_VERIFY_SSL = os.getenv('UNIFI_VERIFY_SSL', 'false').lower() == 'true'
 
@@ -48,10 +47,8 @@ class Config:
         """Validate required configuration"""
         errors = []
 
-        if not cls.UNIFI_USERNAME:
-            errors.append("UNIFI_USERNAME is required")
-        if not cls.UNIFI_PASSWORD:
-            errors.append("UNIFI_PASSWORD is required")
+        if not cls.UNIFI_API_KEY:
+            errors.append("UNIFI_API_KEY is required")
 
         if errors:
             raise ValueError(f"Configuration errors: {', '.join(errors)}")
