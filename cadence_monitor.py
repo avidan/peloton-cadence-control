@@ -209,8 +209,8 @@ class CadenceMonitor:
                 # Update YouTube block status
                 await self.update_youtube_block()
 
-                # Status update every 10 iterations
-                if int(time.time()) % 10 == 0:
+                # Status update every 5 seconds
+                if int(time.time()) % 5 == 0:
                     avg_cadence = self.get_average_cadence()
                     status = "BLOCKED" if self.youtube_blocked else "ALLOWED"
                     logger.info(f"Status: Cadence={self.current_cadence} RPM | "

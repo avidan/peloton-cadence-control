@@ -27,9 +27,21 @@ class CadenceSensor:
         self.connected = False
         self.cadence_callback = None
 
+    def _is_target_device(self, device, adv_data=None):
+        """Check if a discovered device matches our target sensor"""
+        if Config.CADENCE_SENSOR_MAC and device.address.lower() == Config.CADENCE_SENSOR_MAC.lower():
+            return True
+        if Config.CADENCE_SENSOR_NAME and Config.CADENCE_SENSOR_NAME.lower() in (device.name or '').lower():
+            return True
+        if device.name and any(keyword in device.name.lower() for keyword in ['cadence', 'speed', 'wahoo', 'garmin', 'polar', 'magene']):
+            return True
+        return False
+
     async def scan_for_sensor(self, timeout=10):
         """
-        Scan for BLE cadence sensors
+        Scan for BLE cadence sensors.
+        Uses a detection callback to return immediately when the target sensor is found,
+        rather than waiting for the full scan timeout.
 
         Args:
             timeout: Scan timeout in seconds
@@ -39,22 +51,22 @@ class CadenceSensor:
         """
         logger.info(f"Scanning for BLE devices (timeout: {timeout}s)...")
 
-        devices = await BleakScanner.discover(timeout=timeout)
-
+        found_event = asyncio.Event()
         cadence_devices = []
-        for device in devices:
-            logger.debug(f"Found device: {device.name} ({device.address})")
 
-            # Check if device matches configured MAC or name
-            if Config.CADENCE_SENSOR_MAC and device.address.lower() == Config.CADENCE_SENSOR_MAC.lower():
-                logger.info(f"Found configured sensor: {device.name} ({device.address})")
+        def detection_callback(device, adv_data):
+            if self._is_target_device(device, adv_data):
+                logger.info(f"Found sensor: {device.name} ({device.address})")
                 cadence_devices.append(device)
-            elif Config.CADENCE_SENSOR_NAME and Config.CADENCE_SENSOR_NAME.lower() in (device.name or '').lower():
-                logger.info(f"Found sensor by name: {device.name} ({device.address})")
-                cadence_devices.append(device)
-            elif device.name and any(keyword in device.name.lower() for keyword in ['cadence', 'speed', 'wahoo', 'garmin', 'polar']):
-                logger.info(f"Found potential cadence sensor: {device.name} ({device.address})")
-                cadence_devices.append(device)
+                found_event.set()
+
+        scanner = BleakScanner(detection_callback=detection_callback)
+        await scanner.start()
+        try:
+            await asyncio.wait_for(found_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            pass
+        await scanner.stop()
 
         if not cadence_devices:
             logger.warning("No cadence sensors found")
