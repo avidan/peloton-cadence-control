@@ -69,11 +69,7 @@ class CadenceSensor:
         await scanner.stop()
 
         if not cadence_devices:
-            logger.warning("No cadence sensors found")
-            logger.info("Please check that:")
-            logger.info("  1. The sensor is powered on")
-            logger.info("  2. The sensor is not connected to another device")
-            logger.info("  3. You're within Bluetooth range")
+            logger.debug("No cadence sensors found during scan")
 
         return cadence_devices
 
@@ -91,7 +87,6 @@ class CadenceSensor:
             # Scan for device
             devices = await self.scan_for_sensor(timeout=Config.BLE_SCAN_TIMEOUT)
             if not devices:
-                logger.error("No cadence sensors found during scan")
                 return False
             device = devices[0]  # Use first found device
 

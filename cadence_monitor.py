@@ -10,14 +10,22 @@ from logger import setup_logger
 from config import Config
 from ble_reader import CadenceSensor
 from unifi_controller import UniFiController
+from web_dashboard import start_dashboard_thread, update_state
 
 logger = setup_logger('cadence_monitor')
 
 
 class CadenceMonitor:
     """
-    Main controller that monitors cadence and controls YouTube blocking
+    Main controller that monitors cadence and controls YouTube blocking.
+
+    Operates in two modes:
+    - Scanning: sensor not connected, periodically scanning for it.
+      YouTube stays in whatever state it's in (blocked by default).
+    - Monitoring: sensor connected, enforcing cadence-based rules.
     """
+
+    SCAN_INTERVAL = 30  # seconds between scans when sensor not found
 
     def __init__(self):
         self.sensor = CadenceSensor()
@@ -27,9 +35,10 @@ class CadenceMonitor:
         self.youtube_blocked = None  # None = unknown, True = blocked, False = unblocked
         self.last_state_change = 0
         self.running = False
+        self.sensor_connected = False
 
     async def initialize(self):
-        """Initialize connections to sensor and UniFi controller"""
+        """Initialize connection to UniFi controller (sensor is found later)"""
         logger.info("Initializing Peloton Cadence Monitor...")
         Config.display()
 
@@ -64,25 +73,25 @@ class CadenceMonitor:
             return False
 
         logger.info(f"Current YouTube block status: {'BLOCKED' if self.youtube_blocked else 'ALLOWED'}")
+        logger.info("Initialization complete. Waiting for cadence sensor...")
+        logger.info(f"Will scan for sensor every {self.SCAN_INTERVAL}s")
+        return True
 
-        # Connect to BLE cadence sensor
+    async def try_connect_sensor(self):
+        """Attempt to find and connect to the cadence sensor. Returns True if successful."""
         logger.info("Scanning for cadence sensor...")
         if not await self.sensor.connect():
-            logger.error("Failed to connect to cadence sensor")
-            logger.error("Please check that:")
-            logger.error("  1. The sensor is powered on")
-            logger.error("  2. The sensor is not connected to another device")
-            logger.error("  3. Bluetooth is enabled on this device")
             return False
 
-        # Start cadence notifications
-        logger.info("Starting cadence monitoring...")
         if not await self.sensor.start_notifications(callback=self._cadence_update):
-            logger.error("Failed to start cadence notifications")
+            logger.error("Connected but failed to start cadence notifications")
+            await self.sensor.disconnect()
             return False
 
-        logger.info("✓ Initialization complete!")
-        logger.info(f"Monitoring cadence... Threshold: {Config.CADENCE_THRESHOLD} RPM")
+        self.sensor_connected = True
+        self.cadence_history.clear()
+        self.current_cadence = 0
+        logger.info(f"Sensor connected. Monitoring cadence (threshold: {Config.CADENCE_THRESHOLD} RPM)")
         return True
 
     def _cadence_update(self, cadence):
@@ -173,40 +182,51 @@ class CadenceMonitor:
 
     async def monitor_loop(self):
         """
-        Main monitoring loop
+        Main loop with two modes:
+        - Scanning: sensor not connected, scan periodically
+        - Monitoring: sensor connected, enforce cadence rules
         """
         self.running = True
         logger.info("Starting monitor loop...")
 
         try:
             while self.running:
+                if not self.sensor_connected:
+                    # === SCANNING MODE ===
+                    # Update dashboard with idle state
+                    update_state(0, 0, self.youtube_blocked, False,
+                                 self.controller.connected if hasattr(self.controller, 'connected') else True)
+
+                    # Try to find the sensor
+                    if await self.try_connect_sensor():
+                        continue  # sensor found, jump to monitoring mode
+
+                    # Sensor not found — wait before next scan
+                    logger.debug(f"Sensor not found, next scan in {self.SCAN_INTERVAL}s")
+                    for _ in range(self.SCAN_INTERVAL):
+                        if not self.running:
+                            break
+                        await asyncio.sleep(1)
+                    continue
+
+                # === MONITORING MODE ===
                 # Check if still connected
                 if not self.sensor.is_connected():
-                    logger.warning("Lost connection to cadence sensor - BLOCKING YouTube for safety")
+                    logger.warning("Lost connection to cadence sensor - BLOCKING YouTube")
+                    self.sensor_connected = False
 
-                    # Block YouTube immediately when sensor disconnects
+                    # Block YouTube when sensor disconnects
                     if not self.youtube_blocked:
                         if self.controller.enable_rule():
                             self.youtube_blocked = True
                             self.last_state_change = time.time()
-                            logger.warning("⚠ YouTube BLOCKED due to sensor disconnect")
+                            logger.warning("YouTube BLOCKED due to sensor disconnect")
 
-                    # Clear cadence history since we have no data
                     self.cadence_history.clear()
                     self.current_cadence = 0
+                    continue  # back to scanning mode
 
-                    # Attempt reconnect
-                    logger.info("Attempting to reconnect to sensor...")
-                    if not await self.sensor.connect():
-                        logger.error("Reconnection failed, waiting 10s before retry...")
-                        await asyncio.sleep(10)
-                        continue
-                    else:
-                        logger.info("✓ Reconnected to sensor successfully")
-                        # Restart notifications
-                        await self.sensor.start_notifications(callback=self._cadence_update)
-
-                # Update YouTube block status
+                # Update YouTube block status based on cadence
                 await self.update_youtube_block()
 
                 # Status update every 5 seconds
@@ -216,7 +236,15 @@ class CadenceMonitor:
                     logger.info(f"Status: Cadence={self.current_cadence} RPM | "
                                f"Avg={avg_cadence:.1f} RPM | YouTube={status}")
 
-                # Wait before next check
+                # Update web dashboard
+                update_state(
+                    self.current_cadence,
+                    self.get_average_cadence(),
+                    self.youtube_blocked,
+                    self.sensor.is_connected(),
+                    self.controller.connected if hasattr(self.controller, 'connected') else True,
+                )
+
                 await asyncio.sleep(1)
 
         except KeyboardInterrupt:
@@ -242,12 +270,15 @@ async def main():
     """Main entry point"""
     monitor = CadenceMonitor()
 
-    # Initialize
+    # Start web dashboard
+    start_dashboard_thread()
+
+    # Initialize (UniFi only — sensor is found in the monitor loop)
     if not await monitor.initialize():
         logger.error("Initialization failed")
         return 1
 
-    # Run monitor loop
+    # Run monitor loop (stays alive, scans for sensor)
     await monitor.monitor_loop()
     return 0
 
